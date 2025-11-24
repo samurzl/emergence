@@ -2,18 +2,14 @@
 
 A lightweight evolution sandbox built with Python, pygame, and numpy. Particles
 represent different elemental types with unique bonding affinities and energy
-needs. They compete for sparse, wandering energy sites, replicate when
-sufficiently powered, cooperate inside bonded clusters to share energy, and
-occasionally mutate to explore the rulespace.
+needs. They compete for sparse energy sites, replicate when sufficiently
+powered, and occasionally mutate to explore the rulespace.
 
 ## Features
 - **Elemental diversity:** Three element archetypes (Spark, Grove, Stone) with
   unique colors, metabolism, and bonding preferences.
-- **Energy scarcity:** Energy sites recharge slowly and drift around the map,
-  forcing competition and migratory behavior.
-- **Macro-structures:** Bonded clusters share energy, metabolize more
-  efficiently, and can bud off new members to form larger assemblies over
-  long runs.
+- **Energy scarcity:** Energy sites recharge slowly, forcing competition and
+  cooperation via attachments.
 - **Mutation and replication:** Particles divide when energized and may mutate
   their element type, altering future bonding behavior.
 - **Spatial hashing:** Grid-based neighbor lookup keeps interactions smooth on

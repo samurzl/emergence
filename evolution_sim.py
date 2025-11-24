@@ -21,31 +21,22 @@ BACKGROUND = (8, 10, 24)
 FPS = 60
 
 # Simulation parameters
-MAX_PARTICLES = 2000
-INITIAL_PARTICLES = 360
-ENERGY_SITE_COUNT = 26
-ENERGY_RESPAWN_TIME = 5.2
-ENERGY_RADIUS = 12
-ENERGY_PER_SITE = 320.0
-ENERGY_DECAY = 2.0
-MUTATION_RATE = 0.1
-REPLICATION_THRESHOLD = 140.0
-BOND_DISTANCE = 28.0
-BOND_STRENGTH = 28.0
+MAX_PARTICLES = 1200
+INITIAL_PARTICLES = 320
+ENERGY_SITE_COUNT = 18
+ENERGY_RESPAWN_TIME = 6.0
+ENERGY_RADIUS = 10
+ENERGY_PER_SITE = 240.0
+ENERGY_DECAY = 3.5
+MUTATION_RATE = 0.12
+REPLICATION_THRESHOLD = 120.0
+BOND_DISTANCE = 26.0
+BOND_STRENGTH = 24.0
 COLLISION_DISTANCE = 8.0
-WORLD_FRICTION = 0.93
-THERMAL_NOISE = 18.0
+WORLD_FRICTION = 0.92
+THERMAL_NOISE = 26.0
 MAX_SPEED = 120.0
 GRID_SIZE = 48
-
-# Cluster dynamics
-CLUSTER_SIZE_BONUS = 5
-CLUSTER_METABOLISM_MULT = 0.65
-ENERGY_SHARE_RATE = 0.35
-CLUSTER_BUD_THRESHOLD = 220.0
-CLUSTER_BUD_COST = 120.0
-CLUSTER_MAX_SIZE = 24
-WANDER_SPEED = 18.0
 
 
 def clamp(value: float, lo: float, hi: float) -> float:
@@ -96,8 +87,6 @@ class EnergySite:
         self.pos = np.array([x, y], dtype=np.float32)
         self.charge = ENERGY_PER_SITE
         self.cooldown = 0.0
-        angle = random.random() * math.tau
-        self.velocity = np.array([math.cos(angle), math.sin(angle)], dtype=np.float32) * WANDER_SPEED
 
     def available(self) -> bool:
         return self.charge > 0
@@ -108,15 +97,6 @@ class EnergySite:
             if self.cooldown <= 0:
                 self.charge = ENERGY_PER_SITE
                 self.cooldown = ENERGY_RESPAWN_TIME
-        # Gentle wandering keeps the landscape dynamic.
-        jitter = (np.random.rand(2).astype(np.float32) - 0.5) * 2.0
-        self.velocity += jitter
-        speed = float(np.linalg.norm(self.velocity))
-        if speed > WANDER_SPEED:
-            self.velocity *= WANDER_SPEED / speed
-        self.pos += self.velocity * dt
-        self.pos[0] = clamp(self.pos[0], ENERGY_RADIUS, WIDTH - ENERGY_RADIUS)
-        self.pos[1] = clamp(self.pos[1], ENERGY_RADIUS, HEIGHT - ENERGY_RADIUS)
 
     def draw(self, surface: pygame.Surface) -> None:
         ratio = clamp(self.charge / ENERGY_PER_SITE, 0.0, 1.0)
@@ -172,54 +152,6 @@ class ParticleWorld:
                     nearby.extend(grid[cell])
         return nearby
 
-    def clusters(self) -> List[List[int]]:
-        """Return connected components of the bond graph."""
-        seen: Set[int] = set()
-        comps: List[List[int]] = []
-        for idx in range(len(self.types)):
-            if idx in seen:
-                continue
-            stack = [idx]
-            comp: List[int] = []
-            while stack:
-                cur = stack.pop()
-                if cur in seen:
-                    continue
-                seen.add(cur)
-                comp.append(cur)
-                stack.extend(self.bonds[cur])
-            comps.append(comp)
-        return comps
-
-    def share_energy(self, clusters: List[List[int]], dt: float) -> None:
-        for comp in clusters:
-            if len(comp) < 2:
-                continue
-            avg = float(np.mean(self.energy[comp]))
-            delta = (avg - self.energy[comp]) * (ENERGY_SHARE_RATE * dt)
-            self.energy[comp] += delta
-
-    def cluster_bud(self, comp: List[int]) -> None:
-        if len(self.types) >= MAX_PARTICLES or len(comp) >= CLUSTER_MAX_SIZE:
-            return
-        centroid = np.mean(self.positions[comp], axis=0)
-        parent = random.choice(comp)
-        child_type = self.types[parent]
-        if random.random() < MUTATION_RATE:
-            child_type = random.randrange(len(ELEMENTS))
-        angle = random.random() * math.tau
-        offset = np.array([math.cos(angle), math.sin(angle)], dtype=np.float32) * (BOND_DISTANCE * 0.8)
-        child_pos = centroid + offset
-        child_vel = np.random.randn(2).astype(np.float32) * 4
-        self.positions = np.vstack([self.positions, child_pos])
-        self.velocities = np.vstack([self.velocities, child_vel])
-        self.energy = np.append(self.energy, CLUSTER_BUD_COST * 0.4)
-        self.types.append(child_type)
-        self.bonds.append(set())
-        new_idx = len(self.types) - 1
-        self.bonds[new_idx].update({parent})
-        self.bonds[parent].add(new_idx)
-
     def try_bond(self, a: int, b: int) -> None:
         if a == b or b in self.bonds[a] or len(self.bonds[a]) > 6:
             return
@@ -254,13 +186,9 @@ class ParticleWorld:
         if len(self.types) == 0:
             return
 
-        clusters = self.clusters()
-        # Energy drain from metabolism and collisions. Large bonded structures get a metabolism discount.
+        # Energy drain from metabolism and collisions.
         metabolism = np.array([ELEMENTS[t].metabolism for t in self.types], dtype=np.float32)
-        for comp in clusters:
-            if len(comp) >= CLUSTER_SIZE_BONUS:
-                metabolism[comp] *= CLUSTER_METABOLISM_MULT
-        self.energy -= metabolism * dt * 3.6
+        self.energy -= metabolism * dt * 4
         self.energy -= WORLD_FRICTION * dt
 
         # Spatial hashing for local interactions.
@@ -292,10 +220,10 @@ class ParticleWorld:
                 dist = float(np.linalg.norm(delta))
                 if dist <= 1e-4:
                     continue
-                force = (delta / dist) * (dist - BOND_DISTANCE) * 0.38
+                force = (delta / dist) * (dist - BOND_DISTANCE) * 0.3
                 self.velocities[i] += force
 
-        # Energy sites consumption and wandering for dynamic niches.
+        # Energy sites consumption.
         for site in self.energy_sites:
             site.update(dt)
         for i in range(len(self.types)):
@@ -307,22 +235,9 @@ class ParticleWorld:
                 offset = self.positions[i] - site.pos
                 dist_sq = float(np.dot(offset, offset))
                 if dist_sq < (ENERGY_RADIUS + 6) ** 2:
-                    gained = min(32.0 * dt, site.charge)
+                    gained = min(24.0 * dt, site.charge)
                     site.charge -= gained
                     self.energy[i] += gained
-
-        # Share energy across bonded clusters to keep macro-structures alive.
-        self.share_energy(clusters, dt)
-
-        # Budding reproduction favors larger assemblies that hoard energy.
-        for comp in clusters:
-            if len(comp) < CLUSTER_SIZE_BONUS:
-                continue
-            avg_energy = float(np.mean(self.energy[comp]))
-            if avg_energy > CLUSTER_BUD_THRESHOLD:
-                cost = CLUSTER_BUD_COST / len(comp)
-                self.energy[comp] -= cost
-                self.cluster_bud(comp)
 
         # Integrate positions.
         self.velocities += np.random.randn(len(self.types), 2).astype(np.float32) * (THERMAL_NOISE * dt)
@@ -339,10 +254,9 @@ class ParticleWorld:
 
         # Replication and culling.
         for i in range(len(self.types)):
-            if self.energy[i] > REPLICATION_THRESHOLD and len(self.bonds[i]) >= 1:
+            if self.energy[i] > REPLICATION_THRESHOLD:
                 self.energy[i] *= 0.55
                 self.replicate(i)
-        self.energy = np.maximum(self.energy, 0.0)
         alive_mask = self.energy > 0
         if not np.all(alive_mask):
             self._prune(~alive_mask)
